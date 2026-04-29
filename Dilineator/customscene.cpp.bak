@@ -1,0 +1,3374 @@
+#include "customscene.h"
+
+
+CustomScene *scene1;
+CustomScene *scene2;
+CustomScene *scene3;// for interchanging scene1 and scene2
+
+CustomScene::Mode sceneMode1;
+int count;
+int count1 = 0;
+int count2 = 0;
+
+int tMode;// 1 for 2D , 0 for 3D
+QRectF output;
+
+int changeScene = 0;
+int changeScene1 = 0;
+
+//Drawing *myDrawingA;
+//Drawing *myDrawingB;
+//Drawing *myDrawingC;
+
+extern int resizeState;
+extern int resizeUpdate;
+extern int workFMode;
+extern int ImaginMode;
+extern int FrameRateMode;
+
+
+float gCenterX,gCenterY,gTheta;
+
+
+
+extern float imaginPixelSpacing;
+
+QPointF posChanged = QPointF(0,0);
+bool pressed = false;
+bool pressedMovable=false;
+
+
+int updateangleCount=0;
+extern int receiveangleCount;
+
+namespace
+{
+// for resizer in rectangle items
+class RectResizer : public SizeGripItem::Resizer
+{
+public:
+    virtual void operator()(QGraphicsItem* item, const QRectF& rect)
+    {
+        //        QGraphicsRectItem* rectItem =
+        //                dynamic_cast<QGraphicsRectItem*>(item);
+        CustomItem* rectItem =
+                dynamic_cast<CustomItem*>(item);
+
+        if (rectItem)
+        {
+            rectItem->setRect(rect);
+        }
+    }
+};
+//ellipse resizer was implemented from the above code with same number of track points.the same can be implemented for all the
+// other graphics items
+
+class EllipseResizer : public SizeGripItem::Resizer
+{
+public:
+    virtual void operator()(QGraphicsItem* item, const QRectF& rect)
+    {
+        CustomItemEllipse* ellipseItem =
+                dynamic_cast<CustomItemEllipse*>(item);
+
+        if (ellipseItem)
+        {
+            ellipseItem->setRect(rect);
+        }
+    }
+};
+
+}
+
+CustomScene::CustomScene()
+{
+    sceneMode = NoMode;
+    circle = 0;
+    line = 0;
+    rect=0;
+    ellip=0;
+    path=0;
+    paintPath=0;
+    text=0;
+    line2=0;
+    //    myDrawing=0;
+    pixMap=0;
+    drawPen=QPen(Qt::blue, 1, Qt::SolidLine);
+    movingPen=QPen(Qt::green, 1, Qt::SolidLine);
+    textPen=QPen(Qt::black, 1, Qt::SolidLine);
+    pixelPitch=1.0;
+
+}
+CustomScene::~CustomScene()
+{
+
+}
+
+
+
+void CustomScene::setScene(CustomScene *sceneA,CustomScene *sceneB,CustomScene::Mode mode,int c,int m)
+{
+    // set scenes in 2d mode
+    rect=0;
+    ellip=0;
+    path=0;
+    paintPath = 0;
+    sceneMode1 = mode;
+    scene1 = sceneA;
+    scene2 = sceneB;
+    count = c;
+    tMode = m;
+}
+
+
+void CustomScene::setScene(CustomScene *sceneA, CustomScene *sceneB, CustomScene *sceneC, CustomScene::Mode mode, int c, int m)
+{
+    // set scenes in 3d mode
+    rect=0;
+    ellip=0;
+    path=0;
+    paintPath = 0;
+    sceneMode1 = mode;
+    scene1 = sceneA;
+    scene2 = sceneB;
+    scene3 = sceneC;
+    count = c;
+    tMode = m;
+
+}
+
+
+void CustomScene::setMode(CustomScene::Mode mode)
+{
+    /*set the mode for the scene*/
+    sceneMode = mode;
+
+    QGraphicsView::DragMode vMode = QGraphicsView::NoDrag;
+    if(mode == SelectObject)
+    {
+        //makeItemsControllable(true);
+        vMode = QGraphicsView::RubberBandDrag;
+    }
+
+}
+
+void CustomScene::setpixelPitch(float realSize)
+{
+    pixelPitch=realSize;
+}
+
+CustomScene::Mode CustomScene::getCurrMode()
+{
+    return sceneMode;
+}
+
+CustomScene::Mode CustomScene::getMode(QString type)
+{
+    //Assumes type is one of the allowed strings.
+    //Returns mode based on the string .
+    //returns NoMode for anything else
+    if(type=="ellipse")
+    {
+        return DrawEllipse;
+    }
+    else if(type=="rectangle")
+    {
+        return DrawRect;
+    }
+    else if(type=="line")
+    {
+        return DrawLine;
+    }
+    else if(type=="angle")
+    {
+        return DrawAngle;
+    }
+    else if(type=="freehand")
+    {
+        return DrawFree;
+    }
+    else if(type=="text")
+    {
+        return DrawText;
+    }
+    else
+    {
+        return NoMode;
+    }
+}
+
+void CustomScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
+{
+    if(sceneMode!=10){
+        emit mouseDoubleClicked();
+
+    }
+     QGraphicsScene::mouseDoubleClickEvent(event);
+     //emit mouseDoubleClicked();
+}
+
+void CustomScene::keyPressEvent(QKeyEvent *event)
+{
+
+if(sceneMode==ManualMode){
+
+    if((event->key()==Qt::Key_Left)||(event->key()==Qt::Key_Right)||(event->key()==Qt::Key_Up)||(event->key()==Qt::Key_Down))
+    {
+    if(event->key()==Qt::Key_Left)
+    {
+        posChanged.rx()=-2;
+        posChanged.ry()=0;
+    }
+    if(event->key()==Qt::Key_Right)
+    {
+        posChanged.rx()=2;
+        posChanged.ry()=0;
+    }
+    if(event->key()==Qt::Key_Up)
+    {
+        posChanged.rx()=0;
+        posChanged.ry()=-2;
+    }
+    if(event->key()==Qt::Key_Down)
+    {
+        posChanged.rx()=0;
+        posChanged.ry()=2;
+    }
+
+    int s;
+    // in AP
+    if (this==scene1){
+
+
+        s = 1;
+
+        QList<QGraphicsItem*> itemList1=scene1->items();
+        for(int i=0;i<itemList1.length();i++){
+
+             if(qgraphicsitem_cast<QGraphicsPixmapItem*>(itemList1.at(i))&&itemList1.at(i)->flags().testFlag(QGraphicsItem::ItemIsMovable))
+               itemList1.at(i)->moveBy(posChanged.x(),posChanged.y());
+        }
+
+        QList<QGraphicsItem*> itemList=scene2->items();
+        for(int i=0;i<itemList.length();i++){
+
+             if(qgraphicsitem_cast<QGraphicsPixmapItem*>(itemList.at(i))&&itemList.at(i)->flags().testFlag(QGraphicsItem::ItemIsMovable))
+               itemList.at(i)->moveBy(0,posChanged.y());
+        }
+
+
+    }
+
+    // in LAT
+    else{
+
+        s = 2;
+
+        QList<QGraphicsItem*> itemList1=scene2->items();
+        for(int i=0;i<itemList1.length();i++){
+
+             if(qgraphicsitem_cast<QGraphicsPixmapItem*>(itemList1.at(i))&&itemList1.at(i)->flags().testFlag(QGraphicsItem::ItemIsMovable))
+               itemList1.at(i)->moveBy(posChanged.x(),posChanged.y());
+        }
+
+          QList<QGraphicsItem*> itemList=scene1->items();
+          for(int i=0;i<itemList.length();i++){
+
+               if(qgraphicsitem_cast<QGraphicsPixmapItem*>(itemList.at(i))&&itemList.at(i)->flags().testFlag(QGraphicsItem::ItemIsMovable))
+                 itemList.at(i)->moveBy(0,posChanged.y());
+          }
+
+
+    }
+
+    qDebug()<<"position changed......"<<posChanged<<" "<<s;
+
+
+
+    emit positionChanged(posChanged,s);
+
+}
+
+    QGraphicsScene::keyPressEvent(event);
+}
+
+}
+
+void CustomScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
+{
+
+    qDebug()<<"mouse pressed...."<<sceneMode;
+
+
+
+
+
+
+    pressed = true;
+    if (event->button() != Qt::LeftButton)
+        return;
+
+    drawPen=QPen(Qt::blue, 2*(0.139/imaginPixelSpacing), Qt::SolidLine);
+
+    if (receiveangleCount!=updateangleCount)
+     {
+      updateangleCount = receiveangleCount;
+      angleFlag=true;
+      line2=0;
+
+     }
+
+    if (workFMode==1&&ImaginMode==0)
+    {
+        qDebug()<<"workFMode==1&&ImaginMode==0";
+        if(sceneStatus!=1)
+            return;
+        if(rectDefault1)
+        {
+            this->rectDefault1->setFlag(QGraphicsItem::ItemIsMovable,false);
+            rectSizeGripItem1->setEnabled(false);
+        }
+    }
+
+    qDebug()<<"mouse pressed...."<<sceneMode;
+
+    // manual mode in 2D
+    if(sceneMode==10)
+    {
+        if(itemAt(event->scenePos(),QTransform())->flags().testFlag(QGraphicsItem::ItemIsMovable))
+        {
+            pressedMovable=true;
+
+
+            //Assigns the scene position to origPoint.
+            // if the current scene is LAT
+            if(this==scene2)
+            {
+                qDebug()<<"Scene2";
+
+                //scene2->setMode(sceneMode1);
+                origPoint2 = event->scenePos();
+
+
+                qDebug()<<"origPoint2"<<origPoint2;
+            }
+
+            //Assigns the scene position to origPoint.
+            // if the current scene is AP
+            if(this==scene1)
+            {
+                qDebug()<<"Scene1";
+                //scene1->setMode(sceneMode1);
+                origPoint1 = event->scenePos();
+
+
+                qDebug()<<"origPoint1"<<origPoint1;
+            }
+        }
+    }
+
+    else if(sceneMode==11){
+
+
+        if(workFMode==1&&ImaginMode==0&&FrameRateMode==1){
+
+
+
+
+            qDebug()<<"DilinatorMode";
+
+        //if(workFMode==1&&ImaginMode==0&&(FrameRateMode==1||FrameRateMode==2||FrameRateMode==3)){
+
+          //this->setSceneRect(0,0,3072,3072);
+          rectDefault1->setFlag(QGraphicsItem::ItemIsMovable,true);
+          rectSizeGripItem1->setEnabled(true);
+          prevX = event->scenePos().rx();
+          prevY = event->scenePos().ry();
+
+          dTheta=0;
+
+          if (resizeUpdate!=1)
+          {
+
+           topLeftDiffX      = tLX-rectDefault1->sceneBoundingRect().topLeft().x();
+           topLeftDiffY      = tLY-rectDefault1->sceneBoundingRect().topLeft().y();
+           topRightDiffX     = tRX-rectDefault1->sceneBoundingRect().topRight().x();
+           topRightDiffY     = tRY-rectDefault1->sceneBoundingRect().topRight().y();
+           bottomLeftDiffX   = bLX-rectDefault1->sceneBoundingRect().bottomLeft().x();
+           bottomLeftDiffY   = bLY-rectDefault1->sceneBoundingRect().bottomLeft().y();
+           bottomRightDiffX  = bRX-rectDefault1->sceneBoundingRect().bottomRight().x();
+           bottomRightDiffY  = bRY-rectDefault1->sceneBoundingRect().bottomRight().y();
+
+           prevRectPosX = rectDefault1->sceneBoundingRect().topLeft().x();
+           prevRectPosY = rectDefault1->sceneBoundingRect().topLeft().y();
+
+          }
+
+        }
+
+    }
+    // if the mode is not NoMode
+    else if((sceneMode!=0))
+    {
+
+        qDebug()<<"sceneMode.......... "<<sceneMode<<"sceneMode1........... "<<sceneMode1;
+        // get the current point
+        startPoint = event->scenePos();
+
+        qDebug()<<"Start Point"<<startPoint;
+        qDebug()<<"count"<<count;
+
+        if (count==1)
+        {
+            origPoint = event->scenePos();
+
+            // if 3D mode, set axial scene mode
+            if(tMode==0)
+            {
+                if(this==scene1)
+                {
+                    scene1->setMode(sceneMode1);
+                }
+            }
+            else
+            {
+                // if pressed in AP, set AP scene mode
+                if(this==scene1)
+                {
+                    scene1->setMode(sceneMode1);
+                }
+                // if pressed in LAT,set LAT scene mode&set changeScene flag to 1
+                else
+                {
+                    scene2->setMode(sceneMode1);
+                    changeScene = 1;
+                }
+
+            }
+
+        }
+    }
+
+    qDebug()<<"mouse pressed...."<<sceneMode;
+
+
+
+
+
+    QGraphicsScene::mousePressEvent(event);
+
+}
+
+
+void CustomScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
+{
+
+    switch(sceneMode){
+    case DrawAngle:
+    {
+        //Draws angle tool  and adds  tag at the  angle
+        // angle tools has 2 lines:line &line2
+        if(pressed){
+            if(angleFlag)
+            {
+                // when angle is being drawn for 1st time, draw 1st line
+                if(!line){
+                    line = new QGraphicsLineItem;
+                    this->addItem(line);
+                    line->setPen(drawPen);
+                    line->setPos(startPoint);
+
+                }
+                line->setLine(0,0,
+                              event->scenePos().x() - startPoint.x(),
+                              event->scenePos().y() - startPoint.y());
+            }
+            // after 1st line is drawn, draw 2nd line
+            else if(!angleFlag)
+            {
+                if(!line2){
+                    line2 = new QGraphicsLineItem;
+                    this->addItem(line2);
+                    line2->setPen(drawPen);
+                    line2->setPos(startPoint);
+
+                }
+                line2->setLine(0,0,
+                               event->scenePos().x() - startPoint.x(),
+                               event->scenePos().y() - startPoint.y());
+
+                // calculate angle
+                float angle2=(lineAngle(startPoint,event->scenePos())-angle);
+                if(angle2>=0)
+                {
+                    angle2*=180.0F/PI;
+                }
+                else
+                {
+                    angle2=(angle2+PI)*180.0/PI;
+                }
+                QString a= QString::number(angle2,'f',1);//precision one.
+                a.append(QChar(0xB0));//for degree symbol in unicode.
+                angleTag->setPlainText(a);
+                angleTag->setDefaultTextColor(Qt::white);
+                QFont serifFont("Times",(0.139*25)/(imaginPixelSpacing),QFont::Bold);
+                angleTag->setFont(serifFont);
+
+
+            }
+        }
+        break;
+
+    }
+    case DrawLine :
+
+    {
+        //Draws line and adds its length in pixels as tag
+        if(pressed){
+            if(!line){
+                line = new QGraphicsLineItem;
+                this->addItem(line);
+                line->setPen(drawPen);
+                line->setPos(startPoint);
+                lineTag=new QGraphicsTextItem;
+                QFont serifFont("Times",(0.139*25)/(imaginPixelSpacing),QFont::Bold);
+                lineTag->setPos(startPoint);
+                lineTag->setFont(serifFont);
+                lineTag->setDefaultTextColor(Qt::white);
+                lineTag->setAcceptHoverEvents(false);
+                this->addItem(lineTag);
+
+            }
+            line->setLine(0,0,
+                          event->scenePos().x() - startPoint.x(),
+                          event->scenePos().y() - startPoint.y());
+            float distance= std::sqrtf(std::powf(event->scenePos().x() - startPoint.x(),2)
+                                       +std::powf(event->scenePos().y() - startPoint.y(),2));
+            lineTag->setPlainText(QString::number((distance*pixelPitch),'f',1)+" mm");
+        }
+
+        break;
+    }
+//    case DrawCircle:
+//    {
+//        // draws circle, add its diameter as tag
+//        if(pressed){
+//            QPointF point = event->scenePos(); // Get the current mouse position
+
+//            /* Find out how much mouse has moved from the initial point
+//             * X Direction movement = width of rectangle,y direction movement = height of rectangle*/
+
+
+//            int w = point.x()-startPoint.x();
+//            int h = w;
+
+
+//            if(!circle){
+
+//                // create new ellipse item
+//                circle = new QGraphicsEllipseItem;
+//                circle->setPen(drawPen);
+
+//                this->addItem(circle);
+//                //                rect->setFlag(QGraphicsItem::ItemSendsScenePositionChanges,true);
+//                circle->setZValue(1);
+
+//                circleTag=new QGraphicsTextItem;
+//                QFont serifFont("Times",10,QFont::Bold);
+//                circleTag->setPos(startPoint);
+//                circleTag->setFont(serifFont);
+//                circleTag->setDefaultTextColor(Qt::white);
+//                circleTag->setAcceptHoverEvents(false);
+//                this->addItem(circleTag);
+
+//            }
+//            // adjust position
+//            if (w<1)
+//            {
+//                if (h<1)
+//                {
+//                    circle->setRect(point.x(),point.y(),std::abs(w),std::abs(h));
+//                }
+//                else
+//                {
+//                    circle->setRect(point.x(),startPoint.y(),std::abs(w),h);
+
+//                }
+//            }
+//            else
+//            {
+//                if (h<1)
+//                {
+//                    circle->setRect(point.x(),point.y(),w,std::abs(h));
+//                }
+//                else
+//                {
+//                    circle->setRect(startPoint.x(),startPoint.y(),w,h);
+
+//                }
+//            }
+//            circleTag->setPlainText(QString::number((std::abs(w)*pixelPitch),'f',1)+" mm");
+
+//        }
+
+//        break;
+//    }
+    /*modified*/
+    case DrawCircle:
+       {
+           // draws circle, add its diameter as tag
+           if(pressed){
+               QPointF point = event->scenePos(); // Get the current mouse position
+
+               /* Find out how much mouse has moved from the initial point
+                * X Direction movement = width of rectangle,y direction movement = height of rectangle*/
+
+
+               int w = point.x()-startPoint.x();
+               int h = (point.y()-startPoint.y())/abs(point.y()-startPoint.y())*abs(w);
+
+
+               if(!circle){
+
+                   // create new ellipse item
+                   circle = new QGraphicsEllipseItem;
+                   circle->setPen(drawPen);
+                   this->addItem(circle);
+                   //                rect->setFlag(QGraphicsItem::ItemSendsScenePositionChanges,true);
+                   circle->setZValue(1);
+
+                   circleTag=new QGraphicsTextItem;
+                   QFont serifFont("Times",(0.139*25)/(imaginPixelSpacing),QFont::Bold);
+                   circleTag->setPos(startPoint);
+                   circleTag->setFont(serifFont);
+                   circleTag->setDefaultTextColor(Qt::white);
+                   circleTag->setAcceptHoverEvents(false);
+                   this->addItem(circleTag);
+
+               }
+               // adjust position
+               if (w<1)
+               {
+                   if (h<1)
+                   {
+                       circle->setRect(startPoint.x(),startPoint.y(),w,h);
+                   }
+                   else
+                   {
+                       circle->setRect(startPoint.x(),startPoint.y(),w,h);
+
+                   }
+               }
+               else
+               {
+                   if (h<1)
+                   {
+                       circle->setRect(startPoint.x(),startPoint.y(),w,h);
+                   }
+                   else
+                   {
+                       circle->setRect(startPoint.x(),startPoint.y(),w,h);
+
+                   }
+               }
+                circleTag->setPlainText(QString::number((std::abs(w)*pixelPitch),'f',1)+" mm");
+           }
+
+           break;
+       }
+
+    case DrawRect:
+    {
+
+
+        if(ellip)
+        {
+            ellip = NULL;
+
+        }
+
+        QPointF point = event->scenePos(); // Get the current mouse position
+
+        /* Find out how much mouse has moved from the initial point
+             * X Direction movement = width of rectangle,y direction movement = height of rectangle*/
+
+
+        int w = point.x()-origPoint.x();
+        int h = point.y()-origPoint.y();
+
+
+        if(!rect){
+
+            // create new rectangle item
+            rect = new QGraphicsRectItem;
+
+            this->addItem(rect);
+            rect->setFlag(QGraphicsItem::ItemIsMovable,true);
+            rect->setPen(drawPen);
+            //                rect->setFlag(QGraphicsItem::ItemSendsScenePositionChanges,true);
+            rect->setZValue(1);
+
+
+        }
+        // adjust position
+        if (w<1)
+        {
+            if (h<1)
+            {
+                rect->setRect(point.x(),point.y(),std::abs(w),std::abs(h));
+            }
+            else
+            {
+                rect->setRect(point.x(),origPoint.y(),std::abs(w),h);
+
+            }
+        }
+        else
+        {
+            if (h<1)
+            {
+                rect->setRect(point.x(),point.y(),w,std::abs(h));
+            }
+            else
+            {
+                rect->setRect(origPoint.x(),origPoint.y(),w,h);
+
+            }
+        }
+
+        break;
+
+    }
+    case DrawEllipse:
+    {
+
+        if(rect)
+        {
+            rect = NULL;
+
+        }
+
+        QPointF point = event->scenePos(); // Get the current mouse position
+
+        /* Find out how much mouse has moved from the initial point
+             * X Direction movement = width of rectangle,y direction movement = height of rectangle*/
+
+
+        int w = point.x()-origPoint.x();
+        int h = point.y()-origPoint.y();
+        //            std::cout << "w: " << w << " h:" << h << std::endl;
+
+
+        if(!ellip){
+
+            // create new rectangle item
+            ellip = new QGraphicsEllipseItem;
+
+            this->addItem(ellip);
+            ellip->setPen(drawPen);
+            ellip->setFlag(QGraphicsItem::ItemIsMovable,true);
+            //                rect->setFlag(QGraphicsItem::ItemSendsScenePositionChanges,true);
+            ellip->setZValue(1);
+
+
+        }
+        // adjust position
+        if (w<1)
+        {
+            if (h<1)
+            {
+                ellip->setRect(point.x(),point.y(),std::abs(w),std::abs(h));
+            }
+            else
+            {
+                ellip->setRect(point.x(),origPoint.y(),std::abs(w),h);
+
+            }
+        }
+        else
+        {
+            if (h<1)
+            {
+                ellip->setRect(point.x(),point.y(),w,std::abs(h));
+            }
+            else
+            {
+                ellip->setRect(origPoint.x(),origPoint.y(),w,h);
+
+            }
+        }
+
+        break;
+
+    }
+
+    case DrawFree:
+    {
+        if(rect)
+        {
+            rect = NULL;
+
+        }
+
+        if(ellip)
+        {
+            ellip = NULL;
+
+        }
+
+
+        // mouse moved when creating ROI
+        if(count==1)
+        {
+            if(!path)
+            {
+
+                path=new QGraphicsPathItem;
+                //                path->setFlag(QGraphicsItem::ItemIsMovable);
+                this->addItem(path);
+                path->setPen(drawPen);
+                path->setPos(origPoint);
+                paintPath=new QPainterPath;
+                myDrawingA=new Drawing;
+                myDrawingA->pos=origPoint;
+                myDrawingA->type="freehand";
+            }
+            myDrawingA->pointsList.append(event->scenePos());
+            //                *paintPath=path->mapToScene(*paintPath);
+            // connect the points to create path
+            paintPath->lineTo(event->scenePos().x()-origPoint.x(),event->scenePos().y()-origPoint.y());
+            path->setPath(*paintPath);
+
+        }
+        // moving ROI after it is drawn
+        else
+        {
+            // adjust the position of rectangles in other scenes
+            rectnew2->setRect(group->boundingRect());
+            rectnew2->setPen(drawPen);
+            if(tMode==0)
+                rectnew2->setPos(QPointF(group->pos().x(),rectnew2->pos().y()));
+
+            else
+                rectnew2->setPos(QPointF(rectnew2->pos().x(),group->pos().y()));
+
+            myDrawingB->rect1 = rectnew2->mapRectToScene(rectnew2->rect());
+
+            // for 3D
+            if(tMode==0)
+            {
+                rectnew3->setRect(group->boundingRect());
+                rectnew3->setPen(drawPen);
+                rectnew3->setPos(QPointF(group->pos().y(),rectnew3->pos().y()));
+                myDrawingC->rect1 = rectnew3->mapRectToScene(rectnew3->rect());
+
+            }
+
+
+        }
+        break;
+
+    }
+    case DilineatorMode:
+        {
+            if(workFMode==1&&ImaginMode==0&&FrameRateMode==1){
+            //if(workFMode==1&&ImaginMode==0&&(FrameRateMode==1||FrameRateMode==2||FrameRateMode==3)){
+                if (resizeUpdate!=1)
+                    {
+
+                    tLX = topLeftDiffX+rectDefault1->sceneBoundingRect().topLeft().x();
+                    tLY = topLeftDiffY+rectDefault1->sceneBoundingRect().topLeft().y();
+                    tRX = topRightDiffX+rectDefault1->sceneBoundingRect().topRight().x();
+                    tRY = topRightDiffY+rectDefault1->sceneBoundingRect().topRight().y();
+                    bLX = bottomLeftDiffX+rectDefault1->sceneBoundingRect().bottomLeft().x();
+                    bLY = bottomLeftDiffY+rectDefault1->sceneBoundingRect().bottomLeft().y();
+                    bRX = bottomRightDiffX+rectDefault1->sceneBoundingRect().bottomRight().x();
+                    bRY = bottomRightDiffY+rectDefault1->sceneBoundingRect().bottomRight().y();
+
+                    curRectPosX = rectDefault1->sceneBoundingRect().topLeft().x();
+                    curRectPosY = rectDefault1->sceneBoundingRect().topLeft().y();
+                    }
+
+            }
+            break;
+
+        }
+
+    default:
+
+        break;
+
+    }
+    QGraphicsScene::mouseMoveEvent(event);
+
+}
+
+void CustomScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    // emit signals indicating draw/measure tools are drawn, save positions
+    // delete / reset drawn items, clear flags/ variables
+
+    qDebug()<<"releaseyj";
+    if(event->scenePos()==origPoint&&(sceneMode!=DrawText))
+    {
+        //to enable  doubleclick on screen.
+        QGraphicsScene::mouseReleaseEvent(event);
+        return;
+    }
+
+    switch(sceneMode)
+
+    {
+    case DrawLine :
+    {
+        // emit signals  indicating measure tool is drawn
+        emit measurementDrawn(line);
+        emit measurementDrawn(lineTag);
+
+        lineTag=0;
+        line=0;
+        break;
+    }
+
+    case DrawCircle :
+    {
+        // emit signals  indicating measure tool is drawn
+        emit measurementDrawn(circle);
+        emit measurementDrawn(circleTag);
+
+        circle=0;
+        circleTag=0;
+        break;
+    }
+    case DrawAngle:
+    {
+        //        emit measurementDrawn(line);
+        //        emit measurementDrawn(line2);
+
+
+        QList<QGraphicsItem*> list;
+
+        // mouse released after drawing 1st line in the angle tool
+        if(angleFlag)
+        {
+            if(!line){
+                break;
+            }
+            angleFlag=false;
+
+            QLineF linePoints= line->line();
+            // calculate & display angle(nan)
+            angle=lineAngle(linePoints.p1(),linePoints.p2());
+            angle=0;
+
+            startPoint=event->scenePos();
+            angleTag=new QGraphicsTextItem;
+
+            QString a= QString::number(angle,'f',1);//precision one.
+            a.append(QChar(0xB0));//for degree symbol in unicode.
+            angleTag->setPlainText(a);
+
+
+            QFont serifFont("Times",(0.139*25)/(imaginPixelSpacing),QFont::Bold);
+            angleTag->setPos(startPoint);
+            angleTag->setFont(serifFont);
+            angleTag->setDefaultTextColor(Qt::white);
+            angleTag->setAcceptHoverEvents(false);
+
+
+
+            this->addItem(angleTag);
+
+//            //added
+//            list.append(line);
+//            list.append(angleTag);
+//            group=this->createItemGroup(list);
+//            emit measurementDrawn(group);
+
+
+            emit measurementDrawn(line);
+            emit measurementDrawn(angleTag);
+            line = 0;
+
+
+
+
+            mouseMoveEvent(event);
+        }
+        // mouse released after drawing 2nd line in angle tool(finished drawing angle tool)
+        else if(!angleFlag)
+        {
+//            //added
+//            list.clear();
+
+            angleFlag=true;
+            startPoint=event->scenePos();
+            list.append(line);
+            list.append(line2);
+            list.append(angleTag);
+//            group=this->createItemGroup(list);
+            //            group->setFlag(QGraphicsItem::ItemIsSelectable,true);
+            // emit signals  indicating measure tool is drawn
+            //            emit measurementDrawn(group);
+
+            emit measurementDrawn(line2);
+            emit measurementDrawn(angleTag);
+
+            angleTag=0;
+//            line = 0;
+            line2=0;
+            group=0;
+        }
+        break;
+    }
+    case DrawRect:
+    {
+        RoiDrawn = 1 ;//anoop
+
+        output = rect->mapRectToScene(rect->rect());
+        this->setMode(CustomScene::Mode::NoMode);
+        this->removeItem(rect);
+        rect =NULL;
+        delete rect;
+
+        /*save the ROI's (type, position)to structure Drawing(both in scene1 and scene2)*/
+        myDrawingA=new Drawing;
+        myDrawingA->type="rectangle";
+        myDrawingA->rect1 = output;
+
+        myDrawingB = new Drawing;
+        myDrawingB->type = "rectangle";
+        myDrawingB->rect1 = output;
+
+        // save for scene3 in 3D
+        if(tMode==0)
+        {
+            myDrawingC = new Drawing;
+            myDrawingC->type = "rectangle";
+            myDrawingC->rect1 = output;
+
+        }
+
+
+        this->DrawRectSlot(output);
+        count++;
+
+        break;
+
+    }
+    case DrawEllipse:
+    {
+
+        RoiDrawn = 2 ;//anoop
+
+        output = ellip->mapRectToScene(ellip->rect());
+        this->setMode(CustomScene::Mode::NoMode);
+        this->removeItem(ellip);
+        ellip = NULL;
+        delete ellip;
+        count++;
+        /*save the ROI's (type, position)to structure Drawing(both in scene1 and scene2)*/
+        myDrawingA=new Drawing;
+        myDrawingA->type="ellipse";
+        myDrawingA->rect1 = output;
+
+        myDrawingB = new Drawing;
+        myDrawingB->type = "rectangle";
+        myDrawingB->rect1 = output;
+
+        // save for scene3 in 3D
+        if(tMode==0)
+        {
+            myDrawingC = new Drawing;
+            myDrawingC->type = "rectangle";
+            myDrawingC->rect1 = output;
+
+        }
+
+        this->DrawRectSlot(output);
+
+
+        break;
+
+    }
+    case DrawFree:
+    {
+        RoiDrawn = 3 ;//anoop
+        // mouse released after drawing the ROI
+        if(count==1)
+        {
+            QList<QGraphicsItem*> list;
+            list.append(path);
+            // add path to the graphics item group
+            group=this->createItemGroup(list);
+            group->setFlag(QGraphicsItem::ItemIsMovable,true);
+            group->setFlag(QGraphicsItem::ItemSendsGeometryChanges,true);
+
+            myDrawingA->pointsList<<myDrawingA->pointsList.at(0);
+            //pntlistxy.append(pntlistxy.at(0));//anoop
+
+            for(int i=0;i<myDrawingA->pointsList.length();i++)
+            {
+                paintPath->lineTo(myDrawingA->pointsList.at(i).x()-myDrawingA->pos.x(),
+                                  myDrawingA->pointsList.at(i).y()-myDrawingA->pos.y());
+
+            }
+
+
+            path->setPath(*paintPath);
+            path->setPen(drawPen);
+
+            // get the bounding rectangle around the freehand ROI
+            QRectF output = group->boundingRect();
+            myDrawingB=new Drawing;
+            myDrawingB->type="rectangle";
+            myDrawingB->rect1 = output;
+            //            this->removeItem(path);
+            path = NULL;
+            delete path;
+
+            // add the rectangle item (bounding rect around freehand ROI)to the other scenes
+            rectnew2 = new QGraphicsRectItem;
+            rectnew2->setPen(drawPen);
+            if(changeScene==0)
+            {
+                scene2->addItem(rectnew2);
+
+            }
+            else
+            {
+                scene1->addItem(rectnew2);
+                changeScene = 0;
+                changeScene1 = 1;
+
+            }
+            rectnew2->setRect(myDrawingB->rect1);
+
+            if(tMode==0)
+            {
+                myDrawingC=new Drawing;
+                myDrawingC->type="rectangle";
+                myDrawingC->rect1 = output;
+
+                rectnew3 = new QGraphicsRectItem;
+                rectnew3->setPen(drawPen);
+                scene3->addItem(rectnew3);
+                rectnew3->setRect(myDrawingC->rect1);
+            }
+
+            count++;// increment count indicating ROI is drawn
+
+        }
+        // mouse released after changing the position of ROI
+        // get how much the ROI is shifted from the previous position
+        else
+        {
+            posChanged = posChanged+(event->scenePos()-startPoint);
+            myDrawingA->posChange = posChanged;
+            qDebug()<<"anoop the pos change freehand"<<posChanged;
+        }
+        break;
+
+    }
+    case ManualMode:
+    {
+        if(itemAt(event->scenePos(),QTransform())->flags().testFlag(QGraphicsItem::ItemIsMovable)&&pressedMovable==true){
+            pressedMovable=false;
+
+            int s;
+            // for 3D
+            if(tMode==0){
+                // move only in axial scene
+                if (this==scene1){
+                    count1++;
+                    // get how much it is moved
+                    posChanged = event->scenePos()-origPoint1;
+                    s = 3;
+                }
+                qDebug()<<"position changed......"<<posChanged<<" "<<s;
+
+            }
+            // for 2D
+            else{
+                // in AP
+                if (this==scene1){
+                    count1++;
+                    posChanged = event->scenePos()-origPoint1;
+                    s = 1;
+
+                    QList<QGraphicsItem*> itemList=scene2->items();
+                    for(int i=0;i<itemList.length();i++){
+
+                         if(qgraphicsitem_cast<QGraphicsPixmapItem*>(itemList.at(i))&&itemList.at(i)->flags().testFlag(QGraphicsItem::ItemIsMovable))
+                           itemList.at(i)->moveBy(0,posChanged.y());
+                    }
+
+
+                }
+                // in LAT
+                else{
+                    count2++;
+                    posChanged = event->scenePos()-origPoint2;
+                    s = 2;
+
+                      QList<QGraphicsItem*> itemList=scene1->items();
+                      for(int i=0;i<itemList.length();i++){
+
+                           if(qgraphicsitem_cast<QGraphicsPixmapItem*>(itemList.at(i))&&itemList.at(i)->flags().testFlag(QGraphicsItem::ItemIsMovable))
+                             itemList.at(i)->moveBy(0,posChanged.y());
+                      }
+
+
+                }
+                qDebug()<<"position changed......"<<posChanged<<" "<<s;
+            }
+            // send the change in position to mainwindow to calculate x,y,z shifts
+
+
+
+            emit positionChanged(posChanged,s);
+            qDebug()<<"position changed emitted......";
+        }
+        break;
+    }
+    case DilineatorMode:
+    {
+
+        if(workFMode==1&&ImaginMode==0&&FrameRateMode==1){
+        //if(workFMode==1&&ImaginMode==0&&(FrameRateMode==1||FrameRateMode==2||FrameRateMode==3)){
+        if (resizeUpdate==0)
+            {
+
+            tLX = topLeftDiffX+rectDefault1->sceneBoundingRect().topLeft().x();
+            tLY = topLeftDiffY+rectDefault1->sceneBoundingRect().topLeft().y();
+            tRX = topRightDiffX+rectDefault1->sceneBoundingRect().topRight().x();
+            tRY = topRightDiffY+rectDefault1->sceneBoundingRect().topRight().y();
+            bLX = bottomLeftDiffX+rectDefault1->sceneBoundingRect().bottomLeft().x();
+            bLY = bottomLeftDiffY+rectDefault1->sceneBoundingRect().bottomLeft().y();
+            bRX = bottomRightDiffX+rectDefault1->sceneBoundingRect().bottomRight().x();
+            bRY = bottomRightDiffY+rectDefault1->sceneBoundingRect().bottomRight().y();
+
+
+            if (round(abs(curRectPosX-prevRectPosX))>0 ||round(abs(curRectPosY-prevRectPosY))>0 )
+             {
+            curX = event->scenePos().rx();
+            curY = event->scenePos().ry();
+
+
+            centerDilX = (tLX + bRX)/2;
+            centerDilY = (tLY + bRY)/2;
+    //        centerDilX = centerTempX + (curX-prevX);
+    //        centerDilY = centerTempY + (curY-prevY);
+
+    //        qDebug() <<"centers "<<centerDilX<<centerDilY;
+    //        qDebug() <<"topLeft "<<tLX<<tLY;
+            }
+
+            else if (round(abs(curRectPosX-prevRectPosX))==0 && round(abs(curRectPosY-prevRectPosY))==0)
+            {
+              centerDilX = centerTempX;
+              centerDilY = centerTempY;
+            }
+            }
+
+        else
+        {
+            /*Added*/
+
+
+            dTheta=0;
+            double cTheta =-(rTheta+dTheta)*(3.14/180);
+        //    qDebug() <<"cThetssa "<<cTheta<<rTheta<<dTheta;
+
+           float tempX = tLX-centerTempX;
+           float tempY = tLY-centerTempY;
+
+                ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                ctLX = ctLX+centerTempX;
+                ctLY = ctLY+centerTempY;
+
+                tempX = tRX-centerTempX;
+                tempY = tRY-centerTempY;
+
+                ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                ctRX = ctRX+centerTempX;
+                ctRY = ctRY+centerTempY;
+
+                tempX = bLX-centerTempX;
+                tempY = bLY-centerTempY;
+
+                cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                cbLX = cbLX+centerTempX;
+                cbLY = cbLY+centerTempY;
+
+                tempX = bRX-centerTempX;
+                tempY = bRY-centerTempY;
+
+                cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                cbRX = cbRX+centerTempX;
+                cbRY = cbRY+centerTempY;
+
+                double tempCurx,tempCurx1, tempCury1, tempCury;
+
+                tempX = prevX-centerTempX;
+                tempY = prevY-centerTempY;
+
+                tempCurx = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                tempCury = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                tempCurx = tempCurx+centerTempX;
+                tempCury = tempCury+centerTempY;
+
+                tempX = event->scenePos().rx()-centerTempX;
+                tempY = event->scenePos().ry()-centerTempY;
+
+                tempCurx1 = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                tempCury1 = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                tempCurx1 = tempCurx1+centerTempX;
+                tempCury1 = tempCury1+centerTempY;
+
+
+
+                /*Added*/
+                if ((resizeState==4 || resizeState==5 || resizeState==6) && ctLX+(tempCurx1-tempCurx)>ctRX && (tempCurx1-tempCurx)>0 && std::roundf(ctRX)>=std::roundf(ctLX)) // Dilineator Left Sides
+                {
+                    qDebug() <<"Enter1st Condition";
+                    tempCurx1=tempCurx;
+                    ctLX = ctRX;
+                    cbLX = cbRX;
+
+                }
+
+                if ((resizeState==1 || resizeState==5 || resizeState==9) && ctLY+(tempCury1-tempCury)>cbLY && (tempCury1-tempCury)>0 && std::roundf(cbLY)>=std::roundf(ctLY)) //Dilineator Top Sides
+                {
+                    qDebug() <<"Enter2nd Condition";
+                    tempCury1=tempCury;
+                    ctLY = cbLY;
+                    ctRY = cbRY;
+                }
+
+                if ((resizeState==8 || resizeState==9 || resizeState==10) && ctRX+(tempCurx1-tempCurx)<ctLX && (tempCurx1-tempCurx)<0 && std::roundf(ctRX)>=std::roundf(ctLX)) // Dilineator Right Sides
+                {
+                    qDebug() <<"Enter3rd Condition";
+                    tempCurx1=tempCurx;
+                    ctRX = ctLX;
+                    cbRX = cbLX;
+                }
+
+                if ((resizeState==6 || resizeState==2 || resizeState==10) && cbLY+(tempCury1-tempCury)<ctLY && (tempCury1-tempCury)<0 && std::roundf(cbLY)>=std::roundf(ctLY)) // Dilineator Right Sides
+                {
+                    qDebug() <<"Enter4th Condition";
+                    tempCury1=tempCury;
+                    cbLY = ctLY;
+                    cbRY = ctRY;
+                }
+
+
+                /*Added*/
+
+
+
+
+
+               if (resizeState==5)  //topLeft
+                {
+                  tLX = ctLX+(tempCurx1-tempCurx);
+                  tLY = ctLY+(tempCury1-tempCury);
+
+                  tRX = ctRX;
+                  tRY = ctRY+(tempCury1-tempCury);
+
+                  bLX = cbLX+(tempCurx1-tempCurx);
+                  bLY = cbLY;
+
+                  bRX = cbRX;
+                  bRY = cbRY;
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+               if (resizeState==9)  //topRight
+                {
+                  tLX = ctLX;
+                  tLY = ctLY+(tempCury1-tempCury);
+
+                  tRX = ctRX+(tempCurx1-tempCurx);
+                  tRY = ctRY+(tempCury1-tempCury);
+
+                  bLX = cbLX;
+                  bLY = cbLY;
+
+                  bRX = cbRX+(tempCurx1-tempCurx);
+                  bRY = cbRY;
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+               if (resizeState==6)  //bottomLeft
+                {
+                  tLX = ctLX+(tempCurx1-tempCurx);
+                  tLY = ctLY;
+
+                  tRX = ctRX;
+                  tRY = ctRY;
+
+                  bLX = cbLX+(tempCurx1-tempCurx);
+                  bLY = cbLY+(tempCury1-tempCury);
+
+                  bRX = cbRX;
+                  bRY = cbRY+(tempCury1-tempCury);
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+
+               if (resizeState==10)  //bottomRight
+                {
+                  tLX = ctLX;
+                  tLY = ctLY;
+
+                  tRX = ctRX+(tempCurx1-tempCurx);
+                  tRY = ctRY;
+
+                  bLX = cbLX;
+                  bLY = cbLY+(tempCury1-tempCury);
+
+                  bRX = cbRX+(tempCurx1-tempCurx);
+                  bRY = cbRY+(tempCury1-tempCury);
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+
+               if (resizeState==1)  //top
+                {
+                  tLX = ctLX;
+                  tLY = ctLY+(tempCury1-tempCury);
+
+                  tRX = ctRX;
+                  tRY = ctRY+(tempCury1-tempCury);
+
+                  bLX = cbLX;
+                  bLY = cbLY;
+
+                  bRX = cbRX;
+                  bRY = cbRY;
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+               if (resizeState==4)  //Left
+                {
+                  tLX = ctLX+(tempCurx1-tempCurx);
+                  tLY = ctLY;
+
+                  tRX = ctRX;
+                  tRY = ctRY;
+
+                  bLX = cbLX+(tempCurx1-tempCurx);
+                  bLY = cbLY;
+
+                  bRX = cbRX;
+                  bRY = cbRY;
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+               if (resizeState==8)  //Right
+                {
+                  tLX = ctLX;
+                  tLY = ctLY;
+
+                  tRX = ctRX+(tempCurx1-tempCurx);
+                  tRY = ctRY;
+
+                  bLX = cbLX;
+                  bLY = cbLY;
+
+                  bRX = cbRX+(tempCurx1-tempCurx);
+                  bRY = cbRY;
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+
+               if (resizeState==2)  //bottom
+                {
+                  tLX = ctLX;
+                  tLY = ctLY;
+
+                  tRX = ctRX;
+                  tRY = ctRY;
+
+                  bLX = cbLX;
+                  bLY = cbLY+(tempCury1-tempCury);
+
+                  bRX = cbRX;
+                  bRY = cbRY+(tempCury1-tempCury);
+
+                  cTheta =(rTheta+dTheta)*(3.14/180);
+
+                  tempX = tLX-centerTempX;
+                  tempY = tLY-centerTempY;
+
+                       ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctLX = ctLX+centerTempX;
+                       ctLY = ctLY+centerTempY;
+
+                       tempX = tRX-centerTempX;
+                       tempY = tRY-centerTempY;
+
+                       ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       ctRX = ctRX+centerTempX;
+                       ctRY = ctRY+centerTempY;
+
+                       tempX = bLX-centerTempX;
+                       tempY = bLY-centerTempY;
+
+                       cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbLX = cbLX+centerTempX;
+                       cbLY = cbLY+centerTempY;
+
+                       tempX = bRX-centerTempX;
+                       tempY = bRY-centerTempY;
+
+                       cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+                       cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+                       cbRX = cbRX+centerTempX;
+                       cbRY = cbRY+centerTempY;
+
+    //                   qDebug() <<"tRX "<<tRX<<tRY<<centerTempX<<centerTempY;
+
+    //                   qDebug() <<"Pos obtained "<<ctLX<<ctLY<<ctRX<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+                }
+
+
+
+                       tLX = ctLX;
+                       tLY = ctLY;
+                       tRX = ctRX;
+                       tRY = ctRY;
+                       bLX = cbLX;
+                       bLY = cbLY;
+                       bRX = cbRX;
+                       bRY = cbRY;
+
+                       centerDilX = (tLX+bRX)/2;
+                       centerDilY = (tLY+bRY)/2;
+
+    //            /*Added*/
+        }
+
+
+
+
+
+    //    qDebug() <<"Enter topLeft"<<centerDilX << centerDilY;
+
+    //    qDebug() <<" topLeft"<<tLX<<tLY<<tRX<<tRY<<bLX<<bLY<<bRX<<bRY;
+
+    //    qDebug() <<"event->scene "<<event->scenePos().rx()<<event->scenePos().ry();
+
+        delete[] centerDefault1;
+        centerDefault1 = NULL;
+        centerDefault1 = new QGraphicsRectItem();
+        this->addItem(centerDefault1);
+        centerDefault1->setRect(centerDilX-(1.39/imaginPixelSpacing),centerDilY-(1.39/imaginPixelSpacing),(1.39/imaginPixelSpacing)*2,(1.39/imaginPixelSpacing)*2);
+        centerDefault1->setPen(QPen(Qt::red,(0.139*5)/(imaginPixelSpacing)));
+        centerDefault1->setBrush(QBrush(Qt::red));
+        centerTempX = centerDilX;
+        centerTempY = centerDilY;
+
+
+        float invangle;
+
+    //    if(!((tRX==tLX)&&(tRY==tLY)))
+    //        //atan((tRY-tLY)/(tRX-tLX));
+    //    else
+    //        invangle=0;
+
+       invangle = rTheta*(3.14/180);
+        rTheta = invangle*(180/3.14);
+
+        qDebug() <<"ReleaseRotateAngle "<<rTheta;
+
+
+        double cTheta = -invangle;
+        float tempX = tLX-isocenterX;
+        float tempY = tLY-isocenterY;
+
+        ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        ctLX = ctLX+isocenterX;
+        ctLY = ctLY+isocenterY;
+
+        tempX = tRX-isocenterX;
+        tempY = tRY-isocenterY;
+
+        ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        ctRX = ctRX+isocenterX;
+        ctRY = ctRY+isocenterY;
+
+        tempX = bLX-isocenterX;
+        tempY = bLY-isocenterY;
+
+        cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+
+        cbLX = cbLX+isocenterX;
+        cbLY = cbLY+isocenterY;
+
+        tempX = bRX-isocenterX;
+        tempY = bRY-isocenterY;
+
+        cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        cbRX = cbRX+isocenterX;
+        cbRY = cbRY+isocenterY;
+
+
+
+        cTheta = rTheta*(3.14/180);
+
+
+        /*Calculating intial Dilineator Center*/
+
+        float initCenterX, initCenterY;
+         cTheta=-cTheta;
+        tempX = centerTempX-isocenterX;
+        tempY = centerTempY-isocenterY;
+
+        initCenterX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        initCenterY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        initCenterX = (initCenterX+isocenterX);
+        initCenterY = (initCenterY+isocenterY);
+
+
+        if (rTheta!=gTheta)
+        {
+         gCenterX = isocenterX;
+         gCenterY = isocenterY;
+        }
+
+
+        /*Calculating intial Dilineator Center*/
+
+
+
+              QList<double> plannedValue;
+                double pixelPitch = imaginPixelSpacing;
+                plannedValue.append((ctLX-prevIsoCenterX)*pixelPitch);
+                plannedValue.append((cbRX-prevIsoCenterX)*pixelPitch);
+                plannedValue.append(-(cbRY-prevIsoCenterY)*pixelPitch);
+                plannedValue.append(-(ctLY-prevIsoCenterY)*pixelPitch);
+
+                plannedValue.append((centerTempX-prevIsoCenterX)*pixelPitch);
+                plannedValue.append(-(centerTempY-prevIsoCenterY)*pixelPitch);
+
+
+                plannedValue.append((0.0));
+                plannedValue.append(rTheta);
+
+                plannedValue.append((initCenterX-prevIsoCenterX)*pixelPitch);
+                plannedValue.append(-(initCenterY-prevIsoCenterY)*pixelPitch);
+
+    //          double pixelPitch = imaginPixelSpacing;
+    //          plannedValue.append((ctLX-isocenterX)*pixelPitch);
+    //          plannedValue.append((cbRX-isocenterX)*pixelPitch);
+    //          plannedValue.append(-(cbRY-isocenterY)*pixelPitch);
+    //          plannedValue.append(-(ctLY-isocenterY)*pixelPitch);
+
+    //          plannedValue.append((centerTempX-isocenterX)*pixelPitch);
+    //          plannedValue.append(-(centerTempY-isocenterY)*pixelPitch);
+
+
+    //          plannedValue.append((0.0));
+    //          plannedValue.append(rTheta);
+
+    //          plannedValue.append((initCenterX-isocenterX)*pixelPitch);
+    //          plannedValue.append(-(initCenterY-isocenterY)*pixelPitch);
+
+           emit  UpdatePlannedVlue(plannedValue);
+            ////////////////////  ///////////////////////
+
+            resizeUpdate=0;
+        }
+        break;
+    }
+    default:    
+        break;
+    }
+
+
+
+
+    QGraphicsScene::mouseReleaseEvent(event);
+    pressed = false;
+
+}
+
+
+
+
+void CustomScene::DrawRectSlot(QRectF output)
+{
+    // add resizable rectangle/ ellipse (with size grip items for resizing)
+
+    switch (sceneMode1) {
+    case DrawRect:
+    {
+        // add rectangle to the scene
+        rectItem1 = new CustomItem;
+        rectItem1->setRect(QRectF(0,0,output.width(),output.height()));
+        rectItem1->setPos(output.x(),output.y());
+        rectItem1->setPen(drawPen);
+        if(changeScene==0)
+        {
+            scene1->addItem(rectItem1);
+
+        }
+        else
+        {
+            scene2->addItem(rectItem1);
+
+        }
+        rect1 = rectItem1->mapRectToScene(rectItem1->rect());
+        // add size grip items to the rectangles
+        rectSizeGripItem1 =new SizeGripItem(new RectResizer, rectItem1);
+        QObject::connect(rectSizeGripItem1,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem(QRectF,int)));
+        QObject::connect(rectItem1,SIGNAL(itemChanged(QPointF)),this,SLOT(respondToitemChange(QPointF)));
+        break;
+
+    }
+
+
+    case DrawEllipse:
+    {
+        // add ellipse to the scene
+        ellipseItem1 = new CustomItemEllipse;
+        ellipseItem1->setRect(QRectF(0,0,output.width(),output.height()));
+        ellipseItem1->setPos(output.x(),output.y());
+        ellipseItem1->setPen(drawPen);
+        if(changeScene==0)
+        {
+
+            scene1->addItem(ellipseItem1);
+
+        }
+        else
+        {
+            scene2->addItem(ellipseItem1);
+
+        }
+        rect1 = ellipseItem1->mapRectToScene(ellipseItem1->rect());
+        // add size grip items to the ellipse
+        rectSizeGripItem1 =new SizeGripItem(new EllipseResizer, ellipseItem1);
+        QObject::connect(rectSizeGripItem1,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem(QRectF,int)));
+        QObject::connect(ellipseItem1,SIGNAL(itemChanged(QPointF)),this,SLOT(respondToitemChange(QPointF)));
+        break;
+
+    }
+    default:
+        break;
+    }
+
+    // add corresponding rectangles to other scene
+    rectItem2 = new CustomItem;
+    rectItem2->setRect(QRectF(0,0,output.width(),output.height()));
+    rectItem2->setPos(output.x(),output.y());
+    rectItem2->setPen(drawPen);
+
+    if(changeScene==0)
+    {
+        scene2->addItem(rectItem2);
+    }
+    else
+    {
+        scene1->addItem(rectItem2);
+        changeScene = 0;
+        changeScene1 = 1;
+    }
+    rect2 = rectItem2->mapRectToScene(rectItem2->rect());
+    // add size grip item to rectangle 2
+    rectSizeGripItem2 =new SizeGripItem(new RectResizer, rectItem2);
+    QObject::connect(rectSizeGripItem2,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem1(QRectF,int)));
+    QObject::connect(rectItem2,SIGNAL(itemChanged(QPointF)),this,SLOT(respondToitemChange1(QPointF)));
+
+    // for 3D, add rectangle to 3rd scene
+    if(tMode==0)
+    {
+        rectItem3 = new CustomItem;
+        rectItem3->setRect(QRectF(0,0,output.width(),output.height()));
+        rectItem3->setPos(output.x(),output.y());
+
+        rectItem3->setPen(drawPen);
+        scene3->addItem(rectItem3);
+
+        rect3 = rectItem3->mapRectToScene(rectItem3->rect());
+        // add size grip item to rectangle 3
+        rectSizeGripItem3 =new SizeGripItem(new RectResizer, rectItem3);
+        QObject::connect(rectSizeGripItem3,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem2(QRectF,int)));
+        QObject::connect(rectItem3,SIGNAL(itemChanged(QPointF)),this,SLOT(respondToitemChange2(QPointF)));
+
+    }
+
+}
+void CustomScene::respondToitem(QRectF rectn, int k)
+{
+    rect2 = (rectItem2->rect());
+
+    // when the scene1 ROI item is moved but not resized using size grip item
+    if(k==0)
+    {
+        if(tMode==0)
+        {
+            // ignore signals from scene2 ROI item movement
+            rectItem2->blockSignals(true);
+            // set to postion from size grip item
+            rectItem2->setX(rectn.x());
+            // allow signals from scene2 ROI item movement
+            rectItem2->blockSignals(false);
+
+            rect3 = (rectItem3->rect());
+            // for scene3 ROI item
+            rectItem3->blockSignals(true);
+            rectItem3->setX(rectn.y());
+            rectItem3->blockSignals(false);
+            delete rectSizeGripItem3;
+            rectSizeGripItem3 =new SizeGripItem(new RectResizer, rectItem3);
+            QObject::connect(rectSizeGripItem3,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem2(QRectF,int)));
+            myDrawingC->rect1 = rectItem3->mapRectToScene(rectItem3->rect());
+
+        }
+        else
+        {
+            // ignore signals from scene2 ROI item movement
+            rectItem2->blockSignals(true);
+            // set to postion from size grip item
+            rectItem2->setY(rectn.y());
+            // allow signals from scene2 ROI item movement
+            rectItem2->blockSignals(false);
+
+        }
+
+    }
+    // when the scene1 ROI item is resized using size grip item
+    else
+    {
+        if(tMode==0)
+        {
+            // adjust the position& size of scene2 & scene3 ROI items
+            rectItem2->setRect(QRectF(rectn.x(),rect2.y(),rectn.width(),rect2.height()));
+            rect3 = (rectItem3->rect());
+            rectItem3->setRect(QRectF(rectn.y(),rect3.y(),rectn.height(),rect3.height()));
+            delete rectSizeGripItem3;
+            rectSizeGripItem3 =new SizeGripItem(new RectResizer, rectItem3);
+            QObject::connect(rectSizeGripItem3,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem2(QRectF,int)));
+            myDrawingC->rect1 = rectItem3->mapRectToScene(rectItem3->rect());
+        }
+        else
+            // adjust the position& size of scene2  ROI item
+            rectItem2->setRect(QRectF(rect2.x(),rectn.y(),rect2.width(),rectn.height()));
+    }
+
+    delete rectSizeGripItem2;
+    rectSizeGripItem2 =new SizeGripItem(new RectResizer, rectItem2);
+    QObject::connect(rectSizeGripItem2,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem1(QRectF,int)));
+
+    if(k==0)
+    {
+        myDrawingA->rect1 = rectn;
+
+    }
+    else
+    {
+        // ellipse mode
+        if(sceneMode1==3)
+            myDrawingA->rect1 = ellipseItem1->mapRectToScene(rectn);
+        // rectangle mode
+        else if(sceneMode1==4)
+            myDrawingA->rect1 = rectItem1->mapRectToScene(rectn);
+
+
+    }
+
+    myDrawingB->rect1 = rectItem2->mapRectToScene(rectItem2->rect());
+
+
+}
+
+void CustomScene::respondToitem1(QRectF rectn, int k)
+{
+
+    // when the scene2 ROI item is moved but not resized using size grip item
+    switch (sceneMode1) {
+    case DrawRect:
+    {
+        rect1 = (rectItem1->rect());
+        if(k==0)
+        {
+            // ignore signals from scene1 ROI item movement
+            // set to postion from size grip item
+            // allow signals from scene1 ROI item movement
+
+            if(tMode==0)
+            {
+                rectItem1->blockSignals(true);
+                rectItem1->setX(rectn.x());
+                rectItem1->blockSignals(false);
+            }
+            else
+            {
+
+                rectItem1->blockSignals(true);
+                rectItem1->setY(rectn.y());
+                rectItem1->blockSignals(false);
+            }
+
+        }
+        // when the scene2 ROI item is resized using size grip item
+        // adjust the position& size of scene1  ROI item
+
+        else
+        {
+            if(tMode==0)
+            {
+                rectItem1->setRect(QRectF(rectn.x(),rect1.y(),rectn.width(),rect1.height()));
+
+            }
+            else
+
+                rectItem1->setRect(QRectF(rect1.x(),rectn.y(),rect1.width(),rectn.height()));
+        }
+
+
+        delete rectSizeGripItem1;
+        rectSizeGripItem1 =new SizeGripItem(new RectResizer, rectItem1);
+        QObject::connect(rectSizeGripItem1,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem(QRectF,int)));
+        myDrawingA->rect1 = rectItem1->mapRectToScene(rectItem1->rect());;
+
+        break;
+    }
+    case DrawEllipse:
+    {
+
+        rect1 = (ellipseItem1->rect());
+        if(k==0)
+        {
+            // ignore signals from scene1 ROI item movement
+            // set to postion from size grip item
+            // allow signals from scene1 ROI item movement
+            if(tMode==0)
+            {
+                ellipseItem1->blockSignals(true);
+                ellipseItem1->setX(rectn.x());
+                ellipseItem1->blockSignals(false);
+            }
+            else
+            {
+                ellipseItem1->blockSignals(true);
+                ellipseItem1->setY(rectn.y());
+                ellipseItem1->blockSignals(false);
+            }
+
+        }
+        // when the scene2 ROI item is resized using size grip item
+        // adjust the position& size of scene1  ROI item
+        else
+        {
+            if(tMode==0)
+                ellipseItem1->setRect(QRectF(rectn.x(),rect1.y(),rectn.width(),rect1.height()));
+            else
+
+                ellipseItem1->setRect(QRectF(rect1.x(),rectn.y(),rect1.width(),rectn.height()));
+
+            delete rectSizeGripItem1;
+            rectSizeGripItem1 =new SizeGripItem(new EllipseResizer, ellipseItem1);
+            QObject::connect(rectSizeGripItem1,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem(QRectF,int)));
+            myDrawingA->rect1 = ellipseItem1->mapRectToScene(ellipseItem1->rect());;
+
+        }
+
+        break;
+
+    }
+
+    }
+    // adjust the position& size of scene3  ROI item
+    if(tMode==0)
+    {
+        rect3 = (rectItem3->rect());
+        if(k==0){
+            rectItem3->blockSignals(true);
+            rectItem3->setY(rectn.y());
+            rectItem3->blockSignals(false);
+        }
+        else
+            rectItem3->setRect(QRectF(rect3.x(),rectn.y(),rect3.width(),rectn.height()));
+        delete rectSizeGripItem3;
+        rectSizeGripItem3 =new SizeGripItem(new RectResizer, rectItem3);
+        QObject::connect(rectSizeGripItem3,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem2(QRectF,int)));
+        myDrawingC->rect1 = rectItem3->mapRectToScene(rectItem3->rect());
+
+    }
+    if(k==0)
+    {
+        myDrawingB->rect1 = rectn;
+
+    }
+    else
+        myDrawingB->rect1 = rectItem2->mapRectToScene(rectn);
+
+}
+
+
+
+void CustomScene::respondToitem2(QRectF rectn, int k)
+{
+
+    switch (sceneMode1) {
+    case DrawRect:
+    {
+        rect1 = (rectItem1->rect());
+        // when the scene3 ROI item is moved but not resized using size grip item
+        if(k==0){
+            // ignore signals from scene1 ROI item movement
+            // set to postion from size grip item
+            // allow signals from scene1 ROI item movement
+            rectItem1->blockSignals(true);
+            rectItem1->setY(rectn.x());
+            rectItem1->blockSignals(false);
+        }
+        // when the scene3 ROI item is resized using size grip item
+        // adjust the position& size of scene1  ROI item
+        else{
+            rectItem1->setRect(QRectF(rect1.x(),rectn.x(),rect1.width(),rectn.width()));
+
+        }
+
+        delete rectSizeGripItem1;
+        rectSizeGripItem1 =new SizeGripItem(new RectResizer, rectItem1);
+        QObject::connect(rectSizeGripItem1,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem(QRectF,int)));
+        myDrawingA->rect1 = rectItem1->mapRectToScene(rectItem1->rect());
+
+        break;
+    }
+    case DrawEllipse:
+    {
+
+        rect1 = (ellipseItem1->rect());
+        // when the scene3 ROI item is moved but not resized using size grip item
+        if(k==0){
+            // ignore signals from scene1 ROI item movement
+            // set to postion from size grip item
+            // allow signals from scene1 ROI item movement
+            ellipseItem1->blockSignals(true);
+            ellipseItem1->setY(rectn.x());
+            ellipseItem1->blockSignals(false);
+        }
+        // when the scene3 ROI item is resized using size grip item
+        // adjust the position& size of scene3  ROI item
+        else{
+            ellipseItem1->setRect(QRectF(rect1.x(),rectn.x(),rect1.width(),rectn.width()));
+        }
+        delete rectSizeGripItem1;
+        rectSizeGripItem1 =new SizeGripItem(new RectResizer, ellipseItem1);
+        QObject::connect(rectSizeGripItem1,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem(QRectF,int)));
+        myDrawingA->rect1 = ellipseItem1->mapRectToScene(ellipseItem1->rect());
+
+        break;
+    }
+    }
+    rect2 = (rectItem2->rect());
+
+    // when the scene3 ROI item is moved but not resized using size grip item
+    // ignore signals from scene2 ROI item movement
+    // set to postion from size grip item
+    // allow signals from scene2 ROI item movement
+    if(k==0){
+        rectItem2->blockSignals(true);
+        rectItem2->setY(rectn.y());
+        rectItem2->blockSignals(false);
+    }
+    // when the scene3 ROI item is resized using size grip item
+    // adjust the position& size of scene2  ROI item
+    else
+        rectItem2->setRect(QRectF(rect2.x(),rectn.y(),rect2.width(),rectn.height()));
+    delete rectSizeGripItem2;
+    rectSizeGripItem2 =new SizeGripItem(new RectResizer, rectItem2);
+    QObject::connect(rectSizeGripItem2,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem1(QRectF,int)));
+
+
+
+    myDrawingB->rect1 = rectItem2->mapRectToScene(rectItem2->rect());
+    if(k==0)
+    {
+        myDrawingC->rect1 = rectn;
+
+    }
+    else
+        myDrawingC->rect1 = rectItem3->mapRectToScene(rectn);
+
+
+}
+
+
+
+
+
+void CustomScene::respondToitemChange(QPointF pos)
+{
+    // when the scene1 ROI is moved, get the current positions
+    switch (sceneMode1) {
+    case DrawRect:
+    {
+        rect1 = rectItem1->mapRectToScene(rectItem1->rect());
+        //        rect1 = (rectItem1->rect());
+
+        break;
+    }
+    case DrawEllipse:
+    {
+        rect1 = ellipseItem1->mapRectToScene(ellipseItem1->rect());
+        break;
+    }
+    default:
+        break;
+    }
+
+    QRectF rectangle = QRectF(pos.x(),pos.y(),rect1.width(),rect1.height());
+    // call function to respond to the change in position of scene1 ROI
+    this->respondToitem(rectangle,0);
+
+}
+
+void CustomScene::respondToitemChange1(QPointF pos)
+{
+    // when the scene2 ROI is moved, get the current positions
+    rect2 = rectItem2->mapRectToScene(rectItem2->rect());
+
+    QRectF rectangle = QRectF(pos.x(),pos.y(),rect2.width(),rect2.height());
+    // call function to respond to the change in position of scene2 ROI
+    this->respondToitem1(rectangle,0);
+}
+
+void CustomScene::respondToitemChange2(QPointF pos)
+{
+    // when the scene3 ROI is moved, get the current positions
+    rect3 = rectItem3->mapRectToScene(rectItem3->rect());
+    QRectF rectangle = QRectF(pos.x(),pos.y(),rect3.width(),rect3.height());
+    // call function to respond to the change in position of scene3 ROI
+    this->respondToitem2(rectangle,0);
+}
+
+
+
+QList<Drawing*>CustomScene::redrawRect()
+{
+    // function to redraw ROIs on the scenes
+    QList<Drawing*> drawinglist;
+
+    CustomScene::Mode mode= getMode(myDrawingA->type);
+
+
+    QRectF movingmask = QRectF(myDrawingA->rect1.x()-5,myDrawingA->rect1.y()-5,myDrawingA->rect1.width()+10
+                               ,myDrawingA->rect1.height()+10);
+    QRectF movingmask1 = QRectF(myDrawingB->rect1.x()-5,myDrawingB->rect1.y()-5,myDrawingB->rect1.width()+10
+                                ,myDrawingB->rect1.height()+10);
+    QRectF movingmask2 ;
+    if(myDrawingC)
+    {
+        //        qDebug()<<"3D";
+
+        movingmask2 = QRectF(myDrawingC->rect1.x()-5,myDrawingC->rect1.y()-5,myDrawingC->rect1.width()+10
+                             ,myDrawingC->rect1.height()+10);
+
+    }
+
+    qDebug()<<mode;
+    switch(mode)
+    {
+    case DrawRect:
+    {
+        rectnew1 = new QGraphicsRectItem;
+        rectMoving1 = new QGraphicsRectItem;
+
+        rectnew2 = new QGraphicsRectItem;
+        rectMoving2 =new QGraphicsRectItem;
+
+        rectnew1->setPen(drawPen);
+        rectnew2->setPen(drawPen);
+
+        rectMoving1->setPen(movingPen);
+        rectMoving2->setPen(movingPen);
+
+
+        if(changeScene1==1)
+        {
+            scene2->addItem(rectnew1);
+            rectnew1->setRect(myDrawingA->rect1);
+
+            scene2->addItem(rectMoving1);
+            rectMoving1->setRect(movingmask);
+
+            scene1->addItem(rectnew2);
+            rectnew2->setRect(myDrawingB->rect1);
+
+            scene1->addItem(rectMoving2);
+            rectMoving2->setRect(movingmask1);
+        }
+        else
+        {
+            scene1->addItem(rectnew1);
+            rectnew1->setRect(myDrawingA->rect1);
+
+            scene1->addItem(rectMoving1);
+            rectMoving1->setRect(movingmask);
+
+            scene2->addItem(rectnew2);
+            rectnew2->setRect(myDrawingB->rect1);
+
+            scene2->addItem(rectMoving2);
+            rectMoving2->setRect(movingmask1);
+        }
+
+
+        break;
+
+
+    }
+    case DrawEllipse:
+    {
+        ellipnew1 = new QGraphicsEllipseItem;
+
+        ellipMoving1 = new QGraphicsEllipseItem;
+
+        rectnew2 = new QGraphicsRectItem;
+
+        rectMoving2 =new QGraphicsRectItem;
+
+        ellipnew1->setPen(drawPen);
+        rectnew2->setPen(drawPen);
+
+        ellipMoving1->setPen(movingPen);
+        rectMoving2->setPen(movingPen);
+
+
+        if(changeScene1==1)
+        {
+            scene2->addItem(ellipnew1);
+            ellipnew1->setRect(myDrawingA->rect1);
+
+            scene2->addItem(ellipMoving1);
+            ellipMoving1->setRect(movingmask);
+
+            scene1->addItem(rectnew2);
+            rectnew2->setRect(myDrawingB->rect1);
+
+            scene1->addItem(rectMoving2);
+            rectMoving2->setRect(movingmask1);
+        }
+
+
+        else
+        {
+            scene1->addItem(ellipnew1);
+            ellipnew1->setRect(myDrawingA->rect1);
+
+            scene1->addItem(ellipMoving1);
+            ellipMoving1->setRect(movingmask);
+
+            scene2->addItem(rectnew2);
+            rectnew2->setRect(myDrawingB->rect1);
+
+            scene2->addItem(rectMoving2);
+            rectMoving2->setRect(movingmask1);
+        }
+
+        break;
+    }
+
+    case DrawFree:
+    {
+
+        path=new QGraphicsPathItem;
+        path->setPos(myDrawingA->pos);
+        paintPath=new QPainterPath;
+
+        paintPath->moveTo(0,0);
+
+
+        pathMoving = new QGraphicsPathItem;
+        pathMoving->setPos(myDrawingA->pos);
+
+        //        pathMoving->setPos(myDrawing->pos.x()+5,myDrawing->pos.y()+5);
+
+        QPainterPath *paintPath1;
+        paintPath1=new QPainterPath;
+        //        paintPath1->moveTo(0,0);
+
+
+        for(int i=1;i<myDrawingA->pointsList.length();i++)
+        {
+            paintPath->lineTo(myDrawingA->pointsList.at(i).x()-myDrawingA->pos.x(),
+                              myDrawingA->pointsList.at(i).y()-myDrawingA->pos.y());
+            //            paintPath1->lineTo(myDrawing->pointsList.at(i).x()-myDrawing->pos.x(),
+            //                               myDrawing->pointsList.at(i).y()-myDrawing->pos.y());
+        }
+        paintPath->translate(myDrawingA->posChange);
+        path->setPath(*paintPath);
+        path->setPen(drawPen);
+        paintPath1 = paintPath;
+
+
+        //        paintPath1->translate(myDrawing->posChange);
+        //        pathMoving->setPath(*paintPath1);
+        //        pathMoving->setPen(QPen(Qt::white, 1, Qt::SolidLine));
+
+        //        pathMoving->setScale(1.5);
+        //        pathMoving->setTransformOriginPoint(path->transformOriginPoint());
+        //        pathMoving->setPos(0,0);
+
+
+        QPainterPathStroker stroker;
+
+        stroker.setWidth(20);
+        stroker.setJoinStyle(Qt::MiterJoin); // and other adjustments you need
+        QPainterPath newpath = (stroker.createStroke(*paintPath) + *paintPath).simplified();
+
+        pathMoving->setPath(newpath);
+        pathMoving->setPen(movingPen);
+
+        rectnew2 = new QGraphicsRectItem;
+        rectnew2->setPen(drawPen);
+
+        rectMoving2 =new QGraphicsRectItem;
+
+        rectMoving2->setPen(movingPen);
+
+
+
+        if(changeScene1==1)
+        {
+            scene2->addItem(path);
+            scene2->addItem(pathMoving);
+
+            scene1->addItem(rectnew2);
+            rectnew2->setRect(myDrawingB->rect1);
+            scene1->addItem(rectMoving2);
+            rectMoving2->setRect(movingmask1);
+        }
+        else
+        {
+            scene1->addItem(path);
+            //            scene2->addItem(path);
+            scene1->addItem(pathMoving);
+            scene2->addItem(rectnew2);
+            rectnew2->setRect(myDrawingB->rect1);
+            scene2->addItem(rectMoving2);
+            rectMoving2->setRect(movingmask1);
+        }
+
+    }
+
+    default:
+        break;
+    }
+
+    if(myDrawingC)
+    {
+        rectnew3 = new QGraphicsRectItem;
+        rectMoving3 =new QGraphicsRectItem;
+
+        rectnew3->setPen(drawPen);
+        rectMoving3->setPen(movingPen);
+
+        scene3->addItem(rectnew3);
+        rectnew3->setRect(myDrawingC->rect1);
+
+        scene3->addItem(rectMoving3);
+        rectMoving3->setRect(movingmask2);
+
+
+
+    }
+    drawinglist<< myDrawingA;
+    drawinglist<< myDrawingB;
+
+    if(myDrawingC)
+    {
+        drawinglist<< myDrawingC;
+    }
+    return drawinglist;
+
+    //    return myDrawing,myDrawingB;
+
+}
+
+
+returnList* CustomScene::returnDrawing()
+{
+    // return the list of drawn items
+    returnList *L;
+    L = new returnList;
+
+    QList<Drawing*> drawinglist;
+    drawinglist<< myDrawingA;
+    drawinglist<< myDrawingB;
+
+    if(myDrawingC)
+
+        drawinglist<< myDrawingC;
+
+    L->drawingList = drawinglist;
+    L->n = changeScene1;
+    return L;
+
+
+}
+
+
+float CustomScene::lineAngle(const QPointF start,const QPointF end)
+{
+    return std::atanf((end.y()-start.y())/(end.x()-start.x()));
+}
+
+
+void CustomScene::receiveDrawRectSignalinEnhancement(QRectF *rect,QRectF *rect2,float cTheta, float isoCentreX,float isoCentreY,float p)
+{
+
+
+    this->setMode(Mode::DilineatorMode);
+
+    /*Dilineator Rectangle*/
+
+    rectDefault1= new CustomItem();
+    this->addItem(rectDefault1);
+
+    qDebug()<<"Points Verifying "<<ctLX<<ctLY<<cbRX<<cbRY;
+
+    rectDefault1->setRect(ctLX,ctLY,cbRX-ctLX,cbRY-ctLY);
+
+    if(FrameRateMode==2||FrameRateMode==3)
+        rectDefault1->setPen(QPen(Qt::white,(0.139*5)/(imaginPixelSpacing)));
+    else
+        rectDefault1->setPen(QPen(Qt::red,(0.139*5)/(imaginPixelSpacing)));
+
+    rectDefault1->setRotation((qreal)cTheta);
+
+    rectDefault1->setTransformOriginPoint(isoCentreX/p,isoCentreY/p);
+
+    rectDefault1->resetTransform();
+    rectDefault1->show();
+
+     qDebug()<<"ctLX"<<*rect;
+
+    rectSizeGripItem1 =new SizeGripItem(new RectResizer, rectDefault1);
+
+    if(FrameRateMode!=1)
+    {
+        rectSizeGripItem1->setEnabled(false);
+        rectSizeGripItem1->hide();
+    }
+
+    //    QObject::connect(rectSizeGripItem3,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem2(QRectF,int)));
+    //    QObject::connect(rectItem3,SIGNAL(itemChanged(QPointF)),this,SLOT(respondToitemChange2(QPointF)));
+
+
+
+
+
+    if(FrameRateMode==1){
+
+    /*Jaw Rectangle*/
+    rectDefault2= new CustomItem();
+    this->addItem(rectDefault2);
+    rectDefault2->setRect(*rect2);
+    rectDefault2->setRotation((qreal)gTheta);
+    rectDefault2->setTransformOriginPoint(prevIsoCenterX,prevIsoCenterY);
+    rectDefault2->setPen(QPen(Qt::green,(0.139*5)/(imaginPixelSpacing)));
+    rectDefault2->setFlag(QGraphicsItem::ItemIsMovable,false);
+    rectDefault2->show();
+    }
+
+
+
+    qDebug()<<"Jaw Rect: "<<rectDefault2->rect();
+
+    qDebug()<<"Dil Rect: "<<rectDefault1->rect();
+
+
+
+
+
+    /*Iso Center*/
+
+    isocenterRect = new QGraphicsRectItem();
+
+    this->addItem(isocenterRect);
+    isocenterRect->setRect(prevIsoCenterX-(1.39/imaginPixelSpacing),prevIsoCenterY-(1.39/imaginPixelSpacing),(1.39/imaginPixelSpacing)*2,(1.39/imaginPixelSpacing)*2);
+    isocenterRect->setPen(QPen(Qt::green,(0.139*5)/(imaginPixelSpacing)));
+    isocenterRect->setBrush(QBrush(Qt::green));
+
+
+ qDebug()<<"isocenterRect: "<<isocenterRect->rect();
+
+
+  qDebug()<<"centerTempX "<<gCenterX<<gCenterY;
+
+//    qDebug()<<"DilCenter:(pixels)"<<rectDefault1->rect().center();
+//    qDebug()<<"DilAngle (degree):"<<rectDefault1->rotation();
+
+
+
+
+
+
+
+
+
+    /*Dilineator Centre Point*/
+    centerDefault1 = new QGraphicsRectItem();
+    this->addItem(centerDefault1);
+    centerDefault1->setRect(centerTempX-(1.39/imaginPixelSpacing),centerTempY-(1.39/imaginPixelSpacing),(1.39/imaginPixelSpacing)*2,(1.39/imaginPixelSpacing)*2);
+  //  centerDefault1->setRect(centerTempX-10.0,centerTempY-10.0,20,20);
+    if(FrameRateMode==2||FrameRateMode==3){
+        centerDefault1->setPen(QPen(Qt::white,(0.139*5)/(imaginPixelSpacing)));
+        centerDefault1->setBrush(QBrush(Qt::white));
+    }
+    else{
+        centerDefault1->setPen(QPen(Qt::red,(0.139*5)/(imaginPixelSpacing)));
+        centerDefault1->setBrush(QBrush(Qt::red));
+    }
+
+    centerDefault1->setRotation((qreal)cTheta);
+    centerDefault1->setTransformOriginPoint(centerTempX,centerTempY);
+    centerDefault1->resetTransform();
+    //centerDefault1->setParentItem(rectDefault1);
+
+
+
+
+}
+
+void CustomScene::receiveDrawRectSignal(QRectF *rect, QRectF *rect2, float cTheta, float isoCentreX,float isoCentreY,float p)
+{
+
+
+    this->setMode(Mode::DilineatorMode);
+
+    /*Dilineator Rectangle*/
+    rectDefault1= new CustomItem();
+    this->addItem(rectDefault1);
+
+    rectDefault1->setRect(*rect);
+
+    if(FrameRateMode==2||FrameRateMode==3)
+        rectDefault1->setPen(QPen(Qt::white,(0.139*5)/(imaginPixelSpacing)));
+    else
+        rectDefault1->setPen(QPen(Qt::red,(0.139*5)/(imaginPixelSpacing)));
+
+    rectDefault1->setRotation((qreal)cTheta);
+
+    rectDefault1->setTransformOriginPoint(isoCentreX/p,isoCentreY/p);
+
+    rectDefault1->resetTransform();
+    rectDefault1->show();
+
+
+
+
+    rectSizeGripItem1 =new SizeGripItem(new RectResizer, rectDefault1);
+
+    if(FrameRateMode!=1)
+    {
+        rectSizeGripItem1->setEnabled(false);
+        rectSizeGripItem1->hide();
+    }
+
+    //    QObject::connect(rectSizeGripItem3,SIGNAL(itemChanged(QRectF,int)),this,SLOT(respondToitem2(QRectF,int)));
+    //    QObject::connect(rectItem3,SIGNAL(itemChanged(QPointF)),this,SLOT(respondToitemChange2(QPointF)));
+
+
+
+
+
+    if(FrameRateMode==1){
+
+    /*Jaw Rectangle*/
+    rectDefault2= new CustomItem();
+    this->addItem(rectDefault2);
+    rectDefault2->setRect(*rect2);
+    rectDefault2->setRotation((qreal)cTheta);
+    rectDefault2->setTransformOriginPoint(isoCentreX/p,isoCentreY/p);
+    rectDefault2->setPen(QPen(Qt::green,(0.139*5)/(imaginPixelSpacing)));
+    rectDefault2->setFlag(QGraphicsItem::ItemIsMovable,false);
+    rectDefault2->show();
+    }
+
+
+
+  //  qDebug()<<"Jaw Rect: "<<rectDefault2->rect();
+
+
+
+
+
+    /*Iso Center*/
+
+    isocenterRect = new QGraphicsRectItem();
+
+    this->addItem(isocenterRect);
+    isocenterRect->setRect(isoCentreX/p-(1.39/imaginPixelSpacing),isoCentreY/p-(1.39/imaginPixelSpacing),(1.39/imaginPixelSpacing)*2,(1.39/imaginPixelSpacing)*2);
+    isocenterRect->setPen(QPen(Qt::green,(0.139*5)/(imaginPixelSpacing)));
+    isocenterRect->setBrush(QBrush(Qt::green));
+
+
+
+
+
+
+
+//    qDebug()<<"DilCenter:(pixels)"<<rectDefault1->rect().center();
+//    qDebug()<<"DilAngle (degree):"<<rectDefault1->rotation();
+
+
+
+
+
+
+
+
+    /*Dilineator Centre Point*/
+    centerDefault1 = new QGraphicsRectItem();
+    this->addItem(centerDefault1);
+    centerDefault1->setRect(rectDefault1->rect().center().rx()-(1.39/imaginPixelSpacing),rectDefault1->rect().center().ry()-(1.39/imaginPixelSpacing),(1.39/imaginPixelSpacing)*2,(1.39/imaginPixelSpacing)*2);
+  //  centerDefault1->setRect(centerTempX-10.0,centerTempY-10.0,20,20);
+    if(FrameRateMode==2||FrameRateMode==3){
+        centerDefault1->setPen(QPen(Qt::white,(0.139*5)/(imaginPixelSpacing)));
+        centerDefault1->setBrush(QBrush(Qt::white));
+    }
+    else{
+        centerDefault1->setPen(QPen(Qt::red,(0.139*5)/(imaginPixelSpacing)));
+        centerDefault1->setBrush(QBrush(Qt::red));
+    }
+
+    centerDefault1->setRotation((qreal)cTheta);
+    centerDefault1->setTransformOriginPoint(isoCentreX/p,isoCentreY/p);
+    centerDefault1->resetTransform();
+    //centerDefault1->setParentItem(rectDefault1);
+
+
+
+
+
+
+
+
+
+    /*Applying ColliTheta on Dilineator*/
+
+
+    cTheta = cTheta * (3.14/180);//to radian
+
+
+    /*Added */
+    float tempX = rect->topLeft().rx()*p-isoCentreX;
+    float tempY = rect->topLeft().ry()*p-isoCentreY;
+
+    tLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    tLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    tLX = (tLX+isoCentreX)/p;
+    tLY = (tLY+isoCentreY)/p;
+
+    tempX = rect->topRight().rx()*p-isoCentreX;
+    tempY = rect->topRight().ry()*p-isoCentreY;
+
+    tRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    tRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    tRX = (tRX+isoCentreX)/p;
+    tRY = (tRY+isoCentreY)/p;
+
+    tempX = rect->bottomLeft().rx()*p-isoCentreX;
+    tempY = rect->bottomLeft().ry()*p-isoCentreY;
+
+    bLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    bLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+
+    bLX = (bLX+isoCentreX)/p;
+    bLY = (bLY+isoCentreY)/p;
+
+    tempX = rect->bottomRight().rx()*p-isoCentreX;
+    tempY = rect->bottomRight().ry()*p-isoCentreY;
+
+    bRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    bRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    bRX = (bRX+isoCentreX)/p;
+    bRY = (bRY+isoCentreY)/p;
+
+    /*Added*/
+
+
+    /*Calculate Dilineator Center*/
+    tempX = centerDefault1->rect().center().rx()*p-isoCentreX;
+    tempY = centerDefault1->rect().center().ry()*p-isoCentreY;
+
+    centerTempX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    centerTempY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    centerTempX = (centerTempX+isoCentreX)/p;
+    centerTempY = (centerTempY+isoCentreY)/p;
+
+
+
+//    qDebug() <<"centers "<<centerTempX<<centerTempY;
+//    qDebug()<<"oppo cor cen"<<(tLX+bRX)/2<<(tLY+bRY)/2;
+
+
+    isocenterX = isoCentreX/p;//in pixels
+    isocenterY = isoCentreY/p;//in pixels
+
+
+
+
+    /*Couch Shift calculated in pixels*/
+
+    isoRectCenterShiftX = centerTempX-isoCentreX/p;
+    isoRectCenterShiftY = centerTempY-isoCentreY/p;
+
+
+
+
+    /*X1,X2,Y1,Y2*/
+    ctLX = rect->topLeft().rx();
+    ctLY = rect->topLeft().ry();
+    ctRX = rect->topRight().rx();
+    ctRY = rect->topRight().ry();
+    cbLX = rect->bottomLeft().rx();
+    cbLY = rect->bottomLeft().ry();
+    cbRX = rect->bottomRight().rx();
+    cbRY = rect->bottomRight().ry();
+
+
+
+    /*Calculating intial Dilineator Center*/
+
+    float initCenterX, initCenterY;
+    cTheta=-cTheta;
+    tempX = centerTempX*p-isoCentreX;
+    tempY = centerTempY*p-isoCentreY;
+
+    initCenterX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    initCenterY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    initCenterX = (initCenterX+isoCentreX)/p;
+    initCenterY = (initCenterY+isoCentreY)/p;
+
+    /*Calculating intial Dilineator Center*/
+
+    if(!((tRX==tLX)&&(tRY==tLY)))
+       rTheta = -cTheta*(180/3.14); // rTheta = atan((tRY-tLY)/(tRX-tLX))*(180/3.14);
+    else
+        rTheta=0;
+ //   qDebug() <<"rtheta angle in degree "<<rTheta;
+
+    qDebug() <<"RotateAngle "<<rTheta;
+
+    gCenterX = isocenterX;
+    gCenterY = isocenterY;
+    gTheta = rTheta;
+
+    /*Back up*/
+    prevIsoCenterX = isocenterX; //Creating a copy of my initial isocenter
+    prevIsoCenterY = isocenterY;
+
+        QList<double> plannedValue;
+
+                             plannedValue.append((ctLX*p-isoCentreX));//X1
+
+                             plannedValue.append((cbRX*p-isoCentreX));//X2
+
+                             plannedValue.append(-(cbRY*p-isoCentreY));//Y1
+
+
+                             plannedValue.append(-(ctLY*p-isoCentreY));//Y2
+
+
+                             plannedValue.append(isoRectCenterShiftX*p);//CouchX
+                             plannedValue.append(-isoRectCenterShiftY*p);//CouchY
+                             plannedValue.append((0.0));//CouchZ
+                             plannedValue.append(rTheta);
+
+                             plannedValue.append(initCenterX*p-isoCentreX);
+                             plannedValue.append(-(initCenterY*p-isoCentreY));
+
+     emit  UpdatePlannedVlue(plannedValue);
+
+
+
+
+
+}
+
+void CustomScene::setImage(QImage imag)
+{
+    //Set Image to calculate stats for rectangle and ellipse
+    image= imag;
+    //qDebug()<<"Setting pixmap";
+    pixMap=new QGraphicsPixmapItem;
+    pixMap->setPixmap(QPixmap::fromImage(image));
+    pixMap->setFlag(QGraphicsItem::ItemIsSelectable,false);
+    this->addItem(pixMap);
+    pixMap=0;
+}
+
+void CustomScene::setConversionVals(float a, float b)
+{
+    //HU conversion slope and intercept.
+    slope=a;
+    intercept=b;
+}
+
+
+
+void CustomScene::rotateDrawRect(float rotateStep, QRectF *jawRect)
+{
+
+
+/*
+ * Caution: Centre will be changed.Couch shift will be calculated and send.
+   Additional step of rotaion will be added to the current colliTheta.
+   The updated colliTheta can be directly applied to the mlc.
+*/
+ /*
+   For rotating Dilineator Wires at given rotation step added with colli theta
+ */
+
+
+
+
+//    /*Back up*/
+//    prevIsoCenterX = isocenterX; //Creating a copy of my initial isocenter
+//    prevIsoCenterY = isocenterY;
+
+    isoDilShiftX = centerTempX-isocenterX; // Shift btw initial isocenter and current DilCenter in pixels
+    isoDilShiftY = centerTempY-isocenterY;
+
+
+
+    /*Changing Iso Centre*/
+    isocenterX=centerTempX;
+    isocenterY=centerTempY;
+
+
+
+    /*finding Dil positions without collithta, by removing colllitheta w. r.t  new iso centre */
+
+    float cTheta = -rTheta*(3.14/180);
+
+
+    float tempX = tLX-isocenterX;
+    float tempY = tLY-isocenterY;
+
+    ctLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    ctLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    ctLX = ctLX+isocenterX;
+    ctLY = ctLY+isocenterY;
+
+    tempX = tRX-isocenterX;
+    tempY = tRY-isocenterY;
+
+    ctRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    ctRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    ctRX = ctRX+isocenterX;
+    ctRY = ctRY+isocenterY;
+
+    tempX = bLX-isocenterX;
+    tempY = bLY-isocenterY;
+
+    cbLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    cbLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    cbLX = cbLX+isocenterX;
+    cbLY = cbLY+isocenterY;
+
+    tempX = bRX-isocenterX;
+    tempY = bRY-isocenterY;
+
+    cbRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+    cbRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+    cbRX = cbRX+isocenterX;
+    cbRY = cbRY+isocenterY;
+
+
+
+
+
+
+    dTheta = rotateStep;//rotation step
+    cTheta = (dTheta+rTheta)*(3.14/180);
+
+//    qDebug()<<"Rotation Step     :"<<rotateStep;
+//    qDebug()<<"Updated Collitheta:"<<cTheta*(180/3.14);
+
+
+
+//    qDebug() <<"Current Dilineator Positions in Scene Co-ordinates without  (pixels): "<<ctLX<<ctRX<<ctLY<<ctRY<<cbLX<<cbLY<<cbRX<<cbRY;
+
+
+    /*For Dilineator wires*/
+
+         delete rectDefault1;
+         rectDefault1=NULL;
+         rectDefault1= new CustomItem();
+         this->addItem(rectDefault1);
+
+         rectDefault1->setRect(ctLX,ctLY,cbRX-ctLX,cbRY-ctLY);
+         rectDefault1->setPen(QPen(Qt::red,(0.139*5)/(imaginPixelSpacing)));
+
+         rectDefault1->setRotation((qreal)cTheta*(180/3.14));
+         rectDefault1->setTransformOriginPoint(isocenterX,isocenterY);
+
+         rectDefault1->resetTransform();
+         rectDefault1->show();
+
+
+         rectSizeGripItem1 =new SizeGripItem(new RectResizer, rectDefault1);
+
+     /*For Dilineator wires*/
+
+
+
+     /*For Dilineator Center*/
+         delete centerDefault1;
+         centerDefault1=NULL;
+
+         centerDefault1 = new QGraphicsRectItem();
+         this->addItem(centerDefault1);
+         centerDefault1->setRect(isocenterX-(1.39/imaginPixelSpacing),isocenterY-(1.39/imaginPixelSpacing),(1.39/imaginPixelSpacing)*2,(1.39/imaginPixelSpacing)*2);
+         centerDefault1->setPen(QPen(Qt::red,(0.139*5)/(imaginPixelSpacing)));
+         centerDefault1->setBrush(QBrush(Qt::red));
+         centerDefault1->setRotation((qreal)cTheta*(180/3.14));
+         centerDefault1->setTransformOriginPoint(isocenterX,isocenterY);
+         centerDefault1->resetTransform();
+         centerDefault1->show();
+
+     /*For Dilineator Center*/
+
+
+
+
+
+
+
+    /*After Applying */
+
+        tempX = ctLX-isocenterX;
+        tempY = ctLY-isocenterY;
+
+        tLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        tLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        tLX = tLX+isocenterX;
+        tLY = tLY+isocenterY;
+
+        tempX = ctRX-isocenterX;
+        tempY = ctRY-isocenterY;
+
+        tRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        tRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        tRX = tRX+isocenterX;
+        tRY = tRY+isocenterY;
+
+        tempX = cbLX-isocenterX;
+        tempY = cbLY-isocenterY;
+
+        bLX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        bLY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        bLX = bLX+isocenterX;
+        bLY = bLY+isocenterY;
+
+        tempX = cbRX-isocenterX;
+        tempY = cbRY-isocenterY;
+
+        bRX = tempX*cos(cTheta)+tempY*sin(-cTheta);
+        bRY = tempX*sin(cTheta)+tempY*cos(cTheta);
+
+        bRX = bRX+isocenterX;
+        bRY = bRY+isocenterY;
+
+
+
+
+
+
+
+
+
+
+
+        /*Calculating intial Dilineator Center*/
+
+//        centerTempX = (tLX+bRX)/2;
+//        centerTempY = (tLY+bRY)/2;
+
+
+//        qDebug() <<"Points to check "<<tRX<<tLX<<tRY<<tLY;
+        //rTheta = atan((tRY-tLY)/(tRX-tLX))*(180/3.14);
+
+
+
+        /*Upadted ColliTheta*/
+        rTheta = rTheta+dTheta;
+        qDebug() <<"RotateStepAngle "<<rTheta;
+
+        if(rTheta<0)
+            rTheta=(rTheta+360);
+        if(rTheta>360)
+            rTheta=rTheta-360;
+
+        double pixelPitch = imaginPixelSpacing;
+        QList<double> plannedValue;
+
+                             plannedValue.append((ctLX-prevIsoCenterX)*pixelPitch);
+                             plannedValue.append((cbRX-prevIsoCenterX)*pixelPitch);
+                             plannedValue.append(-(cbRY-prevIsoCenterY)*pixelPitch);
+                             plannedValue.append(-(ctLY-prevIsoCenterY)*pixelPitch);
+                             plannedValue.append((centerTempX-prevIsoCenterX)*pixelPitch);
+                             plannedValue.append(-(centerTempY-prevIsoCenterY)*pixelPitch);
+                             plannedValue.append((0.0));
+                             plannedValue.append(rTheta);
+
+                             plannedValue.append((centerTempX-prevIsoCenterX)*pixelPitch);
+                             plannedValue.append(-(centerTempY-prevIsoCenterY)*pixelPitch);
+
+     emit  UpdatePlannedVlue(plannedValue);
+
+}
