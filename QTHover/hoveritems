@@ -1,0 +1,11 @@
+#ifndef HOVERITEMS_H
+#define HOVERITEMS_H
+
+
+class hoveritems
+{
+public:
+    hoveritems();
+};
+
+#endif // HOVERITEMS_H
