@@ -1,0 +1,25 @@
+#-------------------------------------------------
+#
+# Project created by QtCreator 2021-06-17T10:53:25
+#
+#-------------------------------------------------
+
+QT       += core gui
+
+greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+
+TARGET = ResizableRectItem
+TEMPLATE = app
+
+
+SOURCES += main.cpp\
+        mainwindow.cpp \
+    resizablerectitem.cpp \
+    resizablerectitemsettings.cpp
+
+HEADERS  += mainwindow.h \
+    resizablerectitem.h \
+    resizablerectitemsettings.h \
+    resizedirections.h
+
+FORMS    += mainwindow.ui
