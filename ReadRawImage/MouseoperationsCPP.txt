@@ -1,0 +1,161 @@
+#include "mouseoperations.h"
+
+MouseOperations::MouseOperations(QObject *parent) : QGraphicsScene(parent)
+{
+
+}
+
+
+
+void MouseOperations::mousePressEvent(QGraphicsSceneMouseEvent *event)
+{
+    mousepressed = true; //to check if the mouse is pressed
+    if(mousepressed == false)
+        return;
+
+    firstPoint = event->scenePos(); //to capture the x,y coordinate on first mouse click
+//    qDebug()<<"mousePressEvent firstPoint "<<firstPoint;
+    QGraphicsScene::mousePressEvent(event);
+}
+
+void MouseOperations::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
+{
+    if(mousepressed == false)
+        return;
+    if(!line)
+    {
+        //creating a object to draw line
+        line = new QGraphicsLineItem(); //item to define to display the line in the Scene
+//        this->addItem(line);
+        line->setPos(firstPoint); //setting the previous position of mouse click
+        QPen pen(Qt::green, 10, Qt::SolidLine/*,Qt::RoundCap*/); //defning the colour and font of the line
+        line->setPen(pen);
+        line->setLine(0,0,event->scenePos().x()-firstPoint.x(),event->scenePos().y()-firstPoint.y()); //Line displayed while moving the mouse
+                                                                                                      //(current position - previous position)
+        line->setFlag(QGraphicsItem::ItemIsSelectable, true); //setting the drawn line as selectable
+    }
+
+    if(line)
+    {
+
+        lastpoint = event->scenePos();
+
+        //creating text to display distance
+        qDebug()<<"mouseReleaseEvent_lastpoint "<<lastpoint.x()<<lastpoint.y()<<"FirstPoint "<<firstPoint.x()<<firstPoint.y();
+        QGraphicsTextItem *text = new  QGraphicsTextItem();
+//        QPen textPen(Qt::red, 5, Qt::SolidLine,Qt::RoundCap);
+        QPen textPen(Qt::red, 5);
+        this->addItem(text);
+        QFont serifFont("Times",(40),QFont::Bold);
+        text->setFont(serifFont);
+        text->setDefaultTextColor(Qt::red);
+//        text->setPos(firstPoint);
+        text->setPos(firstPoint);
+
+        //pixel pitch calcualtions
+        float x = powf((lastpoint.x() - firstPoint.x()),2);//to find the distance between two points
+        float y = powf((lastpoint.y() - firstPoint.y()),2);
+
+        float dist = powf(x+y,0.5); //line distance = Squ((x2-x1)^2 + (y2-y1)^2)
+
+        float pixPitch = ((921.0/1690.0)*0.139);// (0.07) calculating pixel pitch
+                                                //921.0->Source to Object distance
+                                                //1690.0->Source to detector distance
+                                                //varian detector pixel pitch
+        text->setPlainText((QString::number(dist*(pixPitch)/10,'f',2)+" cm"));
+        qDebug()<<"text  "<<dist*(pixPitch)/10;
+        emit UpdateDrawing(line, text); //sending signal to the other class to delete the lines and texts
+        //    qDebug()<<"dist "<<dist<<pixPitch;
+        //    text->setPlainText(QString::number(dist));
+
+        QGraphicsItemGroup *lineTextGroup = new QGraphicsItemGroup();
+        lineTextGroup->addToGroup(line);
+        lineTextGroup->addToGroup(text);
+        this->addItem(lineTextGroup);
+        lineTextGroup->setFlag(QGraphicsItem::ItemIsSelectable, true);
+
+//        line=0; // the line made null because the new line should always start from new point not from the first mose click on the screen
+    }
+
+
+    line->setLine(0,0,event->scenePos().x()-firstPoint.x(),event->scenePos().y()-firstPoint.y()); //Line displayed while moving the mouse
+    QGraphicsScene::mouseMoveEvent(event);
+
+
+
+}
+
+void MouseOperations::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    mousepressed = false;
+
+//    if(!line)
+//        return;
+
+//    if(line)
+//    {
+
+//        lastpoint = event->scenePos();
+
+//        qDebug()<<"mouseReleaseEvent_lastpoint "<<lastpoint.x()<<lastpoint.y()<<"FirstPoint "<<firstPoint.x()<<firstPoint.y();
+//        QGraphicsTextItem *text = new  QGraphicsTextItem();
+//        QPen textPen(Qt::red, 5, Qt::SolidLine,Qt::RoundCap);
+//        this->addItem(text);
+//        QFont serifFont("Times",(40),QFont::Bold);
+//        text->setFont(serifFont);
+//        text->setDefaultTextColor(Qt::red);
+//        text->setPos(firstPoint);
+
+//        float x = powf((lastpoint.x() - firstPoint.x()),2);//to find the distance between two points
+//        float y = powf((lastpoint.y() - firstPoint.y()),2);
+//        float dist = powf(x+y,0.5); //line distance = Squ((x2-x1)^2 + (y2-y1)^2)
+
+//        float pixPitch = ((921.0/1690.0)*0.139);// (0.07) calculating pixel pitch
+//        //921.0->Source to Object distance
+//        //1690.0->Source to detector distance
+//        //varian detector pixel pitch
+//        text->setPlainText((QString::number(dist*(pixPitch)/10,'f',2)+" cm"));
+
+//        emit UpdateDrawing(line, text); //sending signal to the other class to delete the lines and texts
+//        //    qDebug()<<"dist "<<dist<<pixPitch;
+//        //    text->setPlainText(QString::number(dist));
+
+//        QGraphicsItemGroup *lineTextGroup = new QGraphicsItemGroup();
+//        lineTextGroup->addToGroup(line);
+//        lineTextGroup->addToGroup(text);
+//        this->addItem(lineTextGroup);
+//        lineTextGroup->setFlag(QGraphicsItem::ItemIsSelectable, true);
+
+        line=0; text = 0; // the line made null because the new line should always start from new point not from the first mose click on the screen
+//    }
+
+    QGraphicsScene::mouseReleaseEvent(event);
+}
+
+void MouseOperations::selectLine()
+{
+    selectedLineList= this->selectedItems();
+//    selectedLineList.append(text);
+    qDebug()<<"selectedLineList"<<selectedLineList;
+    for (int i = 0;i<selectedLineList.length();i++)
+    {
+        this->removeItem(selectedLineList[i]);
+//        this->removeItem(pair);
+
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
